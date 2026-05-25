@@ -11,7 +11,7 @@ class Device(db.Model):
     port = db.Column(db.Integer, default=161)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Relacja - jedno urządzenie może mieć wiele metryk
+    # Relation - many devices can have many metrics
     metrics = db.relationship('Metric', backref='device', lazy=True, cascade="all, delete-orphan")
 
 class Metric(db.Model):
