@@ -5,7 +5,8 @@ def create_app():
     app = Flask(__name__)
     
     # Configuration simple,basics data base SQLite 
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///network.db'
+    import os
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///network.db')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     # Pin up our data base to aplication
