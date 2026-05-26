@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from .database import db
-from .models import Device
+from .models import Device, Metric
+from .snmp_connector import fetch_snmp_metric
 
 # Blueprint is a "section" in our API. All paths here will start with /api
 api = Blueprint('api', __name__)
@@ -92,3 +93,54 @@ def delete_device(id):
     db.session.delete(device) # Delete
     db.session.commit()       # We confirm the change
     return jsonify({'message': f'Device {id} removed from the database!'}), 200
+# --- 6. DOWNLOADING SNMP DATA AND WRITING TO THE DATABASE (POST) ---
+@api.route('/devices/<int:id>/metrics', methods=['POST'])
+def fetch_device_metrics(id):
+    device = Device.query.get_or_404(id) # We are looking for a device
+    data = request.get_json()
+    
+    # Upewniamy się, że użytkownik podał, czego szuka (np. OID dla CPU)
+    if not data or 'oid' not in data or 'metric_type' not in data:
+        return jsonify({'error': 'Provide oid and metric_type (e.g. temperature)'}), 400
+
+    oid = data['oid']
+    metric_type = data['metric_type']
+
+    snmp_result = fetch_snmp_metric(device.ip_address, device.snmp_community, oid, device.port)
+
+    if "error" in snmp_result:
+        return jsonify({'error': 'SNMP communication error', 'details': snmp_result["error"]}), 503
+    
+    try:
+        # We convert to fraction because the Metric model expects a number (Float)
+        numeric_value = float(snmp_result["value"]) 
+    except ValueError:
+        return jsonify({'error': 'SNMP response is not a number', 'raw_value': snmp_result["value"]}), 400
+
+    new_metric = Metric(device_id=device.id, metric_type=metric_type, value=numeric_value)
+    db.session.add(new_metric)
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Measurement taken and saved!',
+        'metric_type': metric_type,
+        'value': numeric_value
+    }), 201
+
+
+# --- 7. DEVICE MEASUREMENT HISTORY (GET) ---
+
+@api.route('/devices/<int:id>/metrics', methods=['GET'])
+def get_device_metrics(id):
+    device = Device.query.get_or_404(id)
+    
+    result = []
+    for m in device.metrics: 
+        result.append({
+            'id': m.id,
+            'type': m.metric_type,
+            'value': m.value,
+            'timestamp': m.timestamp.isoformat()
+        })
+        
+    return jsonify(result), 200
